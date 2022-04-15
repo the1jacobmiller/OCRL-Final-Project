@@ -51,10 +51,10 @@ class SQPProblem:
         # backtracking parameter
         alpha = 1.0
 
-        # outer loop for the line search
-        for iter in range(max_iters):
+        # outer loop for the quadratic approximation
 
-            # inner loop for the SQP
+        for x_idx in range(len(self.times)):
+
             cost = lambda x: x
             gradient_of_cost = lambda x: x
             gradient_of_lagrangian = np.zeros(10)
@@ -64,6 +64,7 @@ class SQPProblem:
             gradient_equality = np.zeros(10)
             gradient_inequality = np.zeros(10)
 
+			# solve for this timestep's search direction using OSQP
             delta_z = self.sequential_step(
                 cost,
                 gradient_of_lagrangian,
@@ -79,9 +80,11 @@ class SQPProblem:
             delta_lambda = delta_z[1]
             delta_mu = delta_z[2]
 
-            if cost(sqp_x + delta_x) > cost(x) + tolerance*alpha*gradient_of_cost(sqp_x)
-                alpha = 0.5*alpha
-            
+            # inner loop for the line search
+            for iter in range(max_iters):
+                if cost(sqp_x + delta_x) > cost(x) + tolerance*alpha*gradient_of_cost(sqp_x)
+                    alpha = 0.5*alpha
+                
             # update the x based on the line search
             sqp_x += alpha*delta_x
             # TODO: do we need to scale this multipliers by alpha as well?

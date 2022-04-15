@@ -1,4 +1,3 @@
-from unittest import result
 import casadi as c
 import numpy as np
 
