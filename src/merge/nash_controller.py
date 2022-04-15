@@ -63,7 +63,7 @@ class NashController(BaseController):
         self.s1 = s1
         self.dt = dt
 
-    def get_accel(self, env):
+    def get_accel(self, env: Env):
         v = env.k.vehicle.get_speed(self.veh_id)
         lead_id = env.k.vehicle.get_leader(self.veh_id)
         h = env.k.vehicle.get_headway(self.veh_id)

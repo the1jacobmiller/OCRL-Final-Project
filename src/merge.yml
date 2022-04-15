@@ -5,3 +5,4 @@ dependencies:
     - osqp
     - black
     - ipykernel
+    - casadi

@@ -13,3 +13,6 @@ class SQPProblem:
 
     def update(self, q_new, l_new, u_new):
         self.qp_problem.update(q=q_new, l=l_new, u=u_new)
+
+    def sequential_step(self, P: np.ndarray, q: np.ndarray, l=np.ndarray, u=np.ndarray):
+        pass

@@ -1,4 +1,2 @@
 from merge.sqp import SQPProblem
 from merge.nash_controller import NashController
-from merge.idm_controller import IDMController
-from merge.lane_change_controller import LaneChangeController
