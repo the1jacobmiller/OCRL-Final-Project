@@ -1,4 +1,3 @@
-# from merge.sqp import SQPProblem
 import osqp
 import numpy as np
 from scipy import sparse
@@ -15,6 +14,10 @@ def test_osqp_solve():
 	res = prob.solve()
 	assert res.info.status == "solved"
 	assert res.info.run_time < 1
+
+def test_ipopt_solve():
+	assert True
+
 
 if __name__ == '__main__':
 	test_osqp_solve()
