@@ -1,4 +1,4 @@
 from merge.sqp import SQPProblem
 
-def test_sqp():
+def test_osqp_setup():
 	assert True
