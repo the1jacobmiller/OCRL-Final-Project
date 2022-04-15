@@ -1,18 +1,93 @@
 import osqp
 import numpy as np
+from typing import Callable
 
 
 class SQPProblem:
-    def __init__(
-        self, P: np.ndarray, q: np.ndarray, l=np.ndarray, u=np.ndarray
-    ) -> None:
-        self.qp_problem = osqp.OSQP()
+    """
+    Reference the SQP formulation from Lecture 12 here: https://github.com/Optimal-Control-16-745/lecture-notebooks/blob/main/Lecture%2012/Lecture%2012.pdf
+    """
 
-    def solve(self):
+    def __init__(self, X, U, times) -> None:
+        self.X = X
+        self.U = U
+        self.times = times
+
+    def setup_qp_and_solve(
+        self, P: np.ndarray, q: np.ndarray, A: np.ndarray, l: np.ndarray, u: np.ndarray
+    ):
+        self.qp_problem = osqp.OSQP()
+        self.qp_problem.setup(P=P, q=q, A=A, l=l, u=u)
         return self.qp_problem.solve()
 
-    def update(self, q_new, l_new, u_new):
-        self.qp_problem.update(q=q_new, l=l_new, u=u_new)
+    def sequential_step(
+        self,
+        cost: np.ndarray,
+        gradient_of_lagrangian: np.ndarray,
+        hessian_of_lagrangian: np.ndarray,
+        equality_constraint: np.ndarray,
+        inequality_constraint: np.ndarray,
+        gradient_equality: np.ndarray,
+        gradient_inequality: np.ndarray,
+    ):
+        # TODO: create the qp from the above functions
+        P = None
+        q = None
+        A = None
+        l = None
+        u = None
 
-    def sequential_step(self, P: np.ndarray, q: np.ndarray, l=np.ndarray, u=np.ndarray):
-        pass
+        result = self.setup_qp_and_solve(P, q, A, l, u)
+        delta_z = result.x
+        return delta_z
+
+    
+    def sequential_solve(self, initial_x, initial_lambda, initial_mu, max_iters=100, tolerance=1e-2):
+
+        sqp_x = initial_x
+        sqp_lambda = initial_lambda
+        sqp_mu = initial_mu
+
+        # backtracking parameter
+        alpha = 1.0
+
+        # outer loop for the line search
+        for iter in range(max_iters):
+
+            # inner loop for the SQP
+            cost = lambda x: x
+            gradient_of_cost = lambda x: x
+            gradient_of_lagrangian = np.zeros(10)
+            hessian_of_lagrangian = np.zeros(10)
+            equality_constraint = np.zeros(10)
+            inequality_constraint = np.zeros(10)
+            gradient_equality = np.zeros(10)
+            gradient_inequality = np.zeros(10)
+
+            delta_z = self.sequential_step(
+                cost,
+                gradient_of_lagrangian,
+                hessian_of_lagrangian,
+                equality_constraint,
+                inequality_constraint,
+                gradient_equality,
+                gradient_inequality,
+            )
+
+            # TODO: fix this
+            delta_x = delta_z[0]
+            delta_lambda = delta_z[1]
+            delta_mu = delta_z[2]
+
+            if cost(sqp_x + delta_x) > cost(x) + tolerance*alpha*gradient_of_cost(sqp_x)
+                alpha = 0.5*alpha
+            
+            # update the x based on the line search
+            sqp_x += alpha*delta_x
+            # TODO: do we need to scale this multipliers by alpha as well?
+            sqp_lambda += alpha*delta_lambda
+            sqp_mu += alpha*delta_mu
+
+
+
+

@@ -1,9 +1,9 @@
 from unittest import result
-import casadi
+import casadi as c
 import numpy as np
 
 def test_casadi_interface():
-	opti = casadi.Opti()
+	opti = c.Opti()
 	x = opti.variable()
 	y = opti.variable()
 
@@ -14,8 +14,12 @@ def test_casadi_interface():
 	opti.solver('ipopt')
 	sol = opti.solve()
 	result_x, result_y = sol.value(x), sol.value(y)
-	assert result_x == 0.78615
-	assert result_y == 0.61803
+
+	assert np.allclose(result_x , 0.78615)
+	assert np.allclose(result_y , 0.61803)
+
+def test_sqp():
+	pass
 
 if __name__ == '__main__':
 	test_casadi_interface()
