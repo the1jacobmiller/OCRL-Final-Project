@@ -71,7 +71,6 @@ class NashController(BaseController):
         # TODO: perform the optimization problem here and return the acceleration control
 
         sqp = SQPProblem()
-        sqp.setup()
         sqp.solve()
         sqp.update()
         return 0.5
