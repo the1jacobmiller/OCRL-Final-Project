@@ -6,3 +6,4 @@ dependencies:
     - black
     - ipykernel
     - casadi
+    - rich

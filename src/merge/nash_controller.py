@@ -70,8 +70,12 @@ class NashController(BaseController):
 
         # TODO: perform the optimization problem here and return the acceleration control
 
+        initial_x = np.zeros(1)
+        initial_lambda = np.zeros(1)
+        initial_mu = np.zeros(1)
+        times = np.arange(0, 1, 0.1)
         sqp = SQPProblem()
-        sqp.solve()
-        sqp.update()
-        return 0.5
-
+        controls = sqp.sequential_solve(
+            self, initial_x, initial_lambda, initial_mu, max_iters=100, tolerance=1e-2
+        )
+        return controls
