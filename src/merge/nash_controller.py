@@ -1,6 +1,6 @@
 from flow.controllers.base_controller import BaseController
 from flow.envs import Env
-from merge.sqp import SQPProblem
+from merge.nlp import NLPProblem
 import numpy as np
 
 
@@ -63,16 +63,12 @@ class NashController(BaseController):
         self.s1 = s1
         self.dt = dt
 
-    def get_accel(self, env):
+    def get_accel(self, env: Env):
         v = env.k.vehicle.get_speed(self.veh_id)
         lead_id = env.k.vehicle.get_leader(self.veh_id)
         h = env.k.vehicle.get_headway(self.veh_id)
 
         # TODO: perform the optimization problem here and return the acceleration control
 
-        sqp = SQPProblem()
-        sqp.setup()
-        sqp.solve()
-        sqp.update()
-        return 0.5
-
+        controls = 0
+        return controls
