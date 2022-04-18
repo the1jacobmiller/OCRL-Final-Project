@@ -1,4 +1,3 @@
-from cProfile import label
 import casadi as c
 import matplotlib.pyplot as plt
 
@@ -80,9 +79,9 @@ class NLPProblem:
         control = self.get_controls()
         ax1.set_title("States")
         ax1.plot(state[0, :], 'r', label="X Position")
-        ax1.plot(state[0, :], 'r--', label="X Velocity")
-        ax1.plot(state[0, :], 'b', label="Y Position")
-        ax1.plot(state[0, :], 'b--', label="Y Velocity")
+        ax1.plot(state[1, :], 'r--', label="X Velocity")
+        ax1.plot(state[2, :], 'b', label="Y Position")
+        ax1.plot(state[3, :], 'b--', label="Y Velocity")
         ax1.legend()
         # plot the controls
         ax2.set_title("Controls")
