@@ -2,7 +2,6 @@ name: flow
 dependencies:
   - pip:
     # OCRL project stuff
-    - osqp
     - black
     - ipykernel
     - casadi
