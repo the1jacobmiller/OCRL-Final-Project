@@ -133,7 +133,10 @@ class NashController(BaseController):
         self.opti = c.Opti()
 
         n = len(Xref_flattened) #(Nx2)x1
-        m = len(Uref_flattened) #(Nx2)x1
+        m = len(Uref_flattened) #Nx1
+
+        print("n", n)
+        print("m", m)
 
         x = self.opti.variable(n,1)
         u = self.opti.variable(m,1)
@@ -141,14 +144,28 @@ class NashController(BaseController):
         Q = c.MX.eye(n)
         Qf = c.MX.eye(n)
         R = c.MX.eye(m)
-        # q = c.DM([[1,0.1],[0,1]])
-        # A = c.diagcat(q, q, q, q, q, q, q, q, q, q)
 
         stage_cost = (x - Xref_flattened).T @ Q @ (x - Xref_flattened) + u.T @ R @ u
         term_cost = (x[:,-1] - Xref_flattened).T @ Qf @ (x[:,-1] - Xref_flattened)
-     
+
+        a = c.DM([[1, self.dt],[0, 1]])
+        A = c.diagcat(a, a)
+
+        for _ in range(2, m):
+            A = c.diagcat(A, a)
+
+        b = c.DM([[0],[self.dt]])
+        B = c.diagcat(b, b)
+
+        for _ in range(2, m):
+            B = c.diagcat(B, b)
+    
         # const function
         self.opti.minimize(c.sumsqr(stage_cost) + term_cost)
+
+        # self.opti.subject_to(self.opti.bounded(0, u, 30))
+
+        print(A@x + B@u)
 
         controls = 0
         return controls

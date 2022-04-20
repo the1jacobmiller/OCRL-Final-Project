@@ -3,49 +3,38 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-# Q = c.diag(c.MX([1.2, 10, 2, 4]))
-# Qf = c.MX.eye(4) * 100
-# R = c.diag(c.SX([3, 3]))
-
-# R = c.MX.eye(20)
-# Q = c.MX.eye(20)
-
-# a = c.DM([[1,0.1],[0,1]])
-# Q = c.diagcat(a, a, a, a, a, a, a, a, a, a)
 
 opti = c.Opti()
 
-x = opti.variable(40, 1)
-u = opti.variable(40, 1)
-
-Xref = np.zeros((40, 1))
-Uref = np.zeros((40, 1))
-
 n = 40
-m = 40
+m = 20
 
-# n = len(Xref_flattened)
-# m = len(Uref_flattened)
+x = opti.variable(n, 1)
+u = opti.variable(m, 1)
 
-x = opti.variable(m,1)
-u = opti.variable(n,1)
+Xref = np.zeros((n, 1))
+Uref = np.zeros((m, 1))
 
-R = c.MX.eye(n)
-Q = c.MX.eye(m)
-Qf = c.MX.eye(m)
+Q = c.MX.eye(n)
+Qf = c.MX.eye(n)
+R = c.MX.eye(m)
 
-# q = c.DM([[1,0.1],[0,1]])
-# A = c.diagcat(q, q, q, q, q, q, q, q, q, q)
+a = c.DM([[1,0.1],[0,1]])
+A = c.diagcat(a, a)
 
-stage_cost = (x - Xref).T @ Q @ (x - Xref) + u.T @ R @ u
-term_cost = (x - Xref).T @ Qf @ (x - Xref)
+for _ in range(2, 20):
+    A = c.diagcat(A, a)
 
-print(x[:,-1])
+b = c.DM([[0],[0.1]])
+B = c.diagcat(b, b)
+
+for _ in range(2, 20):
+    B = c.diagcat(B, b)
+
+print (A@x + B @ u)
 
 
-# Q = c.MX(2, 2)
+# xdot = B @ u
+# print(xdot)
 
-# c.kron(Q,Q)
-# Q = c.diag(c.MX([[1.0, 0.1], [0.0, 1.0]]))
 
-#print((x - Xref).T @ Q)
