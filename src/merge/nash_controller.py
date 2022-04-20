@@ -113,6 +113,23 @@ class NashController(BaseController):
                                                     ':center_1',
                                                     'center']
 
+    @staticmethod
+    def getAB(m, dt):
+
+        a = c.DM([[1, dt],[0, 1]])
+        A = c.diagcat(a, a)
+
+        for _ in range(2, m):
+            A = c.diagcat(A, a)
+
+        b = c.DM([[0],[dt]])
+        B = c.diagcat(b, b)
+
+        for _ in range(2, m):
+            B = c.diagcat(B, b)
+
+        return A,B
+
     def get_accel(self, env: Env):
         vehicles = {}
         for veh_id in env.sorted_ids:
@@ -135,9 +152,6 @@ class NashController(BaseController):
         n = len(Xref_flattened) #(Nx2)x1
         m = len(Uref_flattened) #Nx1
 
-        print("n", n)
-        print("m", m)
-
         x = self.opti.variable(n,1)
         u = self.opti.variable(m,1)
 
@@ -147,25 +161,19 @@ class NashController(BaseController):
 
         stage_cost = (x - Xref_flattened).T @ Q @ (x - Xref_flattened) + u.T @ R @ u
         term_cost = (x[:,-1] - Xref_flattened).T @ Qf @ (x[:,-1] - Xref_flattened)
-
-        a = c.DM([[1, self.dt],[0, 1]])
-        A = c.diagcat(a, a)
-
-        for _ in range(2, m):
-            A = c.diagcat(A, a)
-
-        b = c.DM([[0],[self.dt]])
-        B = c.diagcat(b, b)
-
-        for _ in range(2, m):
-            B = c.diagcat(B, b)
     
         # const function
         self.opti.minimize(c.sumsqr(stage_cost) + term_cost)
 
-        # self.opti.subject_to(self.opti.bounded(0, u, 30))
+        self.opti.subject_to(self.opti.bounded(0, u, 30))
 
-        print(A@x + B@u)
+        A, B = NashController.getAB(m, self.dt)
+
+        x_next = A@x + B@u
+
+        for k in range(n-1):
+            # set the dynamics constraints
+            self.opti.subject_to(x[k+1]==x_next[k+1])
 
         controls = 0
         return controls
