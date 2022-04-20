@@ -2,6 +2,7 @@ from flow.controllers.base_controller import BaseController
 from flow.envs import Env
 from merge.nlp import NLPProblem
 import numpy as np
+import casadi as c
 
 
 class NashController(BaseController):
@@ -125,6 +126,9 @@ class NashController(BaseController):
             bottom_merge_indices = self.get_observable_state(env, vehicles)
         Xref,Uref = self.get_reference_trajectory(env, x0)
 
+        Xref_flattened = Xref.flatten()
+        Uref_flattened = Uref.flatten()
+
         # print("Vehicle ID:", self.veh_id)
         # print("x0=", x0)
         # print("Top merge indices=", top_merge_indices)
@@ -132,6 +136,29 @@ class NashController(BaseController):
         # print("\n\n")
 
         # TODO: perform the optimization problem here and return the acceleration control
+        self.opti = c.Opti()
+
+        n = len(Xref_flattened)
+        m = len(Uref_flattened)
+
+        x = self.opti.variable(m,1)
+        u = self.opti.variablen1)
+
+        R = c.MX.eye(m)
+        Q = c.MX.eye(n)
+        Qf = c.MX.eye(m)
+
+        # q = c.DM([[1,0.1],[0,1]])
+        # A = c.diagcat(q, q, q, q, q, q, q, q, q, q)
+
+        stage_cost = (x - Xref).T @ Q @ (x - Xref) + u.T @ R @ u
+        term_cost = (x - Xref).T @ Qf @ (x - Xref)
+
+        print(stage_cost)
+        print(term_cost)
+        
+
+        
 
         controls = 0
         return controls
