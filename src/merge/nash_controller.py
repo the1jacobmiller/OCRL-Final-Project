@@ -129,34 +129,26 @@ class NashController(BaseController):
         Xref_flattened = Xref.flatten()
         Uref_flattened = Uref.flatten()
 
-        # print("Vehicle ID:", self.veh_id)
-        # print("x0=", x0)
-        # print("Top merge indices=", top_merge_indices)
-        # print("Bottom merge indices=", bottom_merge_indices)
-        # print("\n\n")
-
         # TODO: perform the optimization problem here and return the acceleration control
         self.opti = c.Opti()
 
-        n = len(Xref_flattened)
-        m = len(Uref_flattened)
+        n = len(Xref_flattened) #(Nx2)x1
+        m = len(Uref_flattened) #(Nx2)x1
 
         x = self.opti.variable(n,1)
         u = self.opti.variable(m,1)
 
-        R = c.MX.eye(m)
         Q = c.MX.eye(n)
         Qf = c.MX.eye(n)
-
+        R = c.MX.eye(m)
         # q = c.DM([[1,0.1],[0,1]])
         # A = c.diagcat(q, q, q, q, q, q, q, q, q, q)
 
         stage_cost = (x - Xref_flattened).T @ Q @ (x - Xref_flattened) + u.T @ R @ u
-        term_cost = (x - Xref_flattened).T @ Qf @ (x - Xref_flattened)
+        term_cost = (x[:,-1] - Xref_flattened).T @ Qf @ (x[:,-1] - Xref_flattened)
      
         # const function
         self.opti.minimize(c.sumsqr(stage_cost) + term_cost)
-
 
         controls = 0
         return controls

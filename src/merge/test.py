@@ -40,7 +40,7 @@ Qf = c.MX.eye(m)
 stage_cost = (x - Xref).T @ Q @ (x - Xref) + u.T @ R @ u
 term_cost = (x - Xref).T @ Qf @ (x - Xref)
 
-print(stage_cost)
+print(x[:,-1])
 
 
 # Q = c.MX(2, 2)
