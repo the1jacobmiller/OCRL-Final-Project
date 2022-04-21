@@ -114,18 +114,18 @@ class NashController(BaseController):
                                                     'center']
 
     @staticmethod
-    def getAB(m, dt):
+    def getAB(dt, n_vehicles):
 
         a = c.DM([[1, dt],[0, 1]])
-        A = c.diagcat(a, a)
+        A = a
 
-        for _ in range(2, m):
+        for _ in range(1, n_vehicles):
             A = c.diagcat(A, a)
 
         b = c.DM([[0],[dt]])
-        B = c.diagcat(b, b)
+        B = b
 
-        for _ in range(2, m):
+        for _ in range(1, n_vehicles):
             B = c.diagcat(B, b)
 
         return A,B
@@ -143,39 +143,54 @@ class NashController(BaseController):
             bottom_merge_indices = self.get_observable_state(env, vehicles)
         Xref,Uref = self.get_reference_trajectory(env, x0)
 
-        Xref_flattened = Xref.flatten()
-        Uref_flattened = Uref.flatten()
-
         # TODO: perform the optimization problem here and return the acceleration control
         self.opti = c.Opti()
 
-        n = len(Xref_flattened) #(Nx2)x1
-        m = len(Uref_flattened) #Nx1
+        n = Xref.shape[1] 
+        m = Uref.shape[1]
 
-        x = self.opti.variable(n,1)
-        u = self.opti.variable(m,1)
+        n_vehicles = n//2
+
+        T = Xref.shape[0]
+
+        x = self.opti.variable(n,T) 
+        u = self.opti.variable(m,T)
 
         Q = c.MX.eye(n)
         Qf = c.MX.eye(n)
         R = c.MX.eye(m)
 
-        stage_cost = (x - Xref_flattened).T @ Q @ (x - Xref_flattened) + u.T @ R @ u
-        term_cost = (x[:,-1] - Xref_flattened).T @ Qf @ (x[:,-1] - Xref_flattened)
+        Xref = Xref.T.squeeze(0)
+        Uref = Uref.T.squeeze(0)
+
+        stage_cost = (x - Xref).T @ Q @ (x - Xref) + (u - Uref).T @ R @ (u - Uref)
+        term_cost = (x[:,-1] - Xref[:,-1]).T @ Qf @ (x[:,-1] - Xref[:,-1])
     
         # const function
         self.opti.minimize(c.sumsqr(stage_cost) + term_cost)
 
-        self.opti.subject_to(self.opti.bounded(0, u, 30))
+        self.opti.subject_to(self.opti.bounded(-30, u, 30))
 
-        A, B = NashController.getAB(m, self.dt)
+        A, B = NashController.getAB(self.dt, n_vehicles)
 
-        x_next = A@x + B@u
-
-        for k in range(n-1):
+        for k in range(T-1):
             # set the dynamics constraints
-            self.opti.subject_to(x[k+1]==x_next[k+1])
+            self.opti.subject_to(x[:,k+1]==A@x[:,k] + B@u[:,k])
 
-        controls = 0
+
+        self.opti.solver("ipopt")
+        self.result = self.opti.solve()
+
+        x_res = self.result.value(x)
+        u_res = self.result.value(u)
+
+        x_res = x_res.reshape(x.shape)
+        u_res = u_res.reshape(u.shape)
+
+        print(x_res[0,:])
+        #print(u_res[0,:])
+
+        controls = 0 #u_res[0][0]
         return controls
 
     def get_observable_state(self, env, vehicles):
