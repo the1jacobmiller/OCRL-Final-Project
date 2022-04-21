@@ -169,7 +169,11 @@ class NashController(BaseController):
         # const function
         self.opti.minimize(c.sumsqr(stage_cost) + term_cost)
 
-        self.opti.subject_to(self.opti.bounded(-30, u, 30))
+        speed_limit = env.net_params.additional_params['speed_limit']
+        accel_limit = env.env_params.additional_params['max_accel']
+
+        # set the acceleration constraints
+        self.opti.subject_to(self.opti.bounded(-accel_limit, u, accel_limit))
 
         A, B = NashController.getAB(self.dt, n_vehicles)
 
@@ -177,7 +181,10 @@ class NashController(BaseController):
             # set the dynamics constraints
             self.opti.subject_to(x[:,k+1]==A@x[:,k] + B@u[:,k])
 
-
+        for k in range(T):
+            # set the velocity constraints
+            self.opti.subject_to(self.opti.bounded(0, x[:,k][1], speed_limit))
+                
         self.opti.solver("ipopt")
         self.result = self.opti.solve()
 
@@ -187,10 +194,10 @@ class NashController(BaseController):
         x_res = x_res.reshape(x.shape)
         u_res = u_res.reshape(u.shape)
 
-        print(x_res[0,:])
+        #print(x_res[0,:])
         #print(u_res[0,:])
 
-        controls = 0 #u_res[0][0]
+        controls = u_res[0][0]
         return controls
 
     def get_observable_state(self, env, vehicles):
