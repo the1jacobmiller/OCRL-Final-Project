@@ -139,8 +139,6 @@ class NashController(BaseController):
             speed = env.k.vehicle.get_speed(veh_id)
             vehicles[veh_id] = (edge, edge_len, pos, speed)
 
-        #print(vehicles)
-
         x0, top_merge_indices, \
             bottom_merge_indices = self.get_observable_state(env, vehicles)
         Xref,Uref = self.get_reference_trajectory(env, x0)
@@ -160,7 +158,7 @@ class NashController(BaseController):
 
         Q = c.MX.eye(n) * 100
         Qf = c.MX.eye(n) * 100
-        R = c.MX.eye(m) * 100
+        R = c.MX.eye(m)
 
         Xref = Xref.T.squeeze(0)
         Uref = Uref.T.squeeze(0)
@@ -182,25 +180,38 @@ class NashController(BaseController):
         for k in range(T-1):
             # set the dynamics constraints
             self.opti.subject_to(x[:,k+1]==A@x[:,k] + B@u[:,k])
- 
+
         for k in range(n_vehicles):
             # set the velocity constraints
             self.opti.subject_to(self.opti.bounded(0, x[2*k+1,:], speed_limit))
 
-        min_seperation = env.k.vehicle.get_length(0) * 1.5
-    
+        min_seperation = (env.k.vehicle.get_length(self.veh_id) * 1.5)**2
+
         for i in range(0, n_vehicles-1):
             xi = x[2*i,:]
             for j in range(i+1, n_vehicles):
                 xj = x[2*j,:]
-                if (i in top_merge_indices and j in bottom_merge_indices) or (j in top_merge_indices and i in bottom_merge_indices):
-                    alpha = min_seperation/T
-                    tau = 0.0
-                    for t in range(T):
-                        # ramp down tau to avoid infeasible conditions
-                        tau += alpha
-                        constraint = (xi[t] - xj[t])**2
-                        self.opti.subject_to(self.opti.bounded(tau, constraint, np.inf))
+                if (i in top_merge_indices and j in bottom_merge_indices) \
+                    or (j in top_merge_indices and i in bottom_merge_indices):
+                    start_separation = (x0[2*i] - x0[2*j])**2
+                    if (start_separation > min_seperation):
+                        # Treat it like the normal case - constraint is fully
+                        # active at all times.
+                        constraint = (xj - xi)**2
+                        self.opti.subject_to(self.opti.bounded(min_seperation,
+                                                               constraint,
+                                                               np.inf))
+                    else:
+                        time_to_merge = min(-x0[2*i], -x0[2*j])/speed_limit
+                        time_steps_to_merge = min(int(time_to_merge/self.dt), T)
+
+                        alpha = (min_seperation - start_separation)/time_steps_to_merge
+                        tau = start_separation
+                        for t in range(time_steps_to_merge):
+                            # ramp down tau to avoid infeasible conditions
+                            tau += alpha
+                            constraint = (xi[t] - xj[t])**2
+                            self.opti.subject_to(self.opti.bounded(tau, constraint, np.inf))
                 else:
                     # needs to be tuned for normal conditions
                     tau = min_seperation
@@ -210,18 +221,13 @@ class NashController(BaseController):
         self.opti.solver("ipopt")
         self.result = self.opti.solve()
 
-        x_res = self.result.value(x)
-        u_res = self.result.value(u)
-
-        x_res = x_res.reshape(x.shape)
-        u_res = u_res.reshape(u.shape)
-
-        # print(x_res[0,:])
-        #print(u_res[0,:])
+        x_res = self.result.value(x).reshape(x.shape)
+        u_res = self.result.value(u).reshape(u.shape)
 
         controls = u_res[0][0]
+        print('Vehicle:', self.veh_id)
+        print('Control:', controls)
 
-        #controls = 0
         return controls
 
     def get_observable_state(self, env, vehicles):
