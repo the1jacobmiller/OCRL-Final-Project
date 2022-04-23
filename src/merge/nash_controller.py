@@ -19,6 +19,7 @@ class NashController(BaseController):
         s1=0,
         time_delay=0.0,
         dt=0.1,
+        N=20,
         noise=0,
         fail_safe=None,
         car_following_params=None,
@@ -42,6 +43,8 @@ class NashController(BaseController):
             nonlinear jam distance, in m (default: 0)
         dt: float, optional
             timestep, in s (default: 0.1)
+        N: int, optional
+            number of MPC time steps (default: 20)
         noise: float, optional
             std dev of normal perturbation to the acceleration (default: 0)
         fail_safe: str, optional
@@ -64,6 +67,7 @@ class NashController(BaseController):
         self.s0 = s0
         self.s1 = s1
         self.dt = dt
+        self.N = N
 
         # Define the observable edges
         self.observable_edges = {}
@@ -113,23 +117,6 @@ class NashController(BaseController):
                                                     ':center_1',
                                                     'center']
 
-    @staticmethod
-    def getAB(dt, n_vehicles):
-
-        a = c.DM([[1, dt],[0, 1]])
-        A = a
-
-        for _ in range(1, n_vehicles):
-            A = c.diagcat(A, a)
-
-        b = c.DM([[0],[dt]])
-        B = b
-
-        for _ in range(1, n_vehicles):
-            B = c.diagcat(B, b)
-
-        return A,B
-
     def get_accel(self, env: Env):
         vehicles = {}
         for veh_id in env.sorted_ids:
@@ -143,21 +130,17 @@ class NashController(BaseController):
             bottom_merge_indices = self.get_observable_state(env, vehicles)
         Xref,Uref = self.get_reference_trajectory(env, x0)
 
-        # TODO: perform the optimization problem here and return the acceleration control
         self.opti = c.Opti()
 
         n = Xref.shape[1]
         m = Uref.shape[1]
-
         n_vehicles = n//2
 
-        T = Xref.shape[0]
+        x = self.opti.variable(n,self.N)
+        u = self.opti.variable(m,self.N)
 
-        x = self.opti.variable(n,T)
-        u = self.opti.variable(m,T)
-
-        Q = c.MX.eye(n) * 100
-        Qf = c.MX.eye(n) * 100
+        Q = c.MX.eye(n) * 1e3
+        Qf = c.MX.eye(n) * 1e3
         R = c.MX.eye(m)
 
         Xref = Xref.T.squeeze(0)
@@ -177,7 +160,7 @@ class NashController(BaseController):
 
         A, B = NashController.getAB(self.dt, n_vehicles)
 
-        for k in range(T-1):
+        for k in range(self.N-1):
             # set the dynamics constraints
             self.opti.subject_to(x[:,k+1]==A@x[:,k] + B@u[:,k])
 
@@ -185,7 +168,7 @@ class NashController(BaseController):
             # set the velocity constraints
             self.opti.subject_to(self.opti.bounded(0, x[2*k+1,:], speed_limit))
 
-        min_seperation = (env.k.vehicle.get_length(self.veh_id) * 1.5)**2
+        min_seperation = (env.k.vehicle.get_length(self.veh_id) * 2.0)**2
 
         for i in range(0, n_vehicles-1):
             xi = x[2*i,:]
@@ -203,7 +186,7 @@ class NashController(BaseController):
                                                                np.inf))
                     else:
                         time_to_merge = min(-x0[2*i], -x0[2*j])/speed_limit
-                        time_steps_to_merge = min(int(time_to_merge/self.dt), T)
+                        time_steps_to_merge = min(int(time_to_merge/self.dt), self.N)
 
                         alpha = (min_seperation - start_separation)/time_steps_to_merge
                         tau = start_separation
@@ -218,13 +201,18 @@ class NashController(BaseController):
                     constraint = (xj - xi)**2
                     self.opti.subject_to(self.opti.bounded(tau, constraint, np.inf))
 
-        self.opti.solver("ipopt")
-        self.result = self.opti.solve()
+        try:
+            self.opti.solver("ipopt")
+            self.result = self.opti.solve()
 
-        x_res = self.result.value(x).reshape(x.shape)
-        u_res = self.result.value(u).reshape(u.shape)
+            x_res = self.result.value(x).reshape(x.shape)
+            u_res = self.result.value(u).reshape(u.shape)
+            controls = u_res[0][0]
+        except:
+            # If we fail, command 0 acceleration
+            print('IPOPT SOLVER FAILED!!')
+            control = 0.
 
-        controls = u_res[0][0]
         print('Vehicle:', self.veh_id)
         print('Control:', controls)
 
@@ -250,6 +238,9 @@ class NashController(BaseController):
         EDGE_LEN = 1
         POSITION = 2
         SPEED = 3
+
+        speed_limit = env.net_params.additional_params['speed_limit']
+        dt = self.dt
 
         # Store the edge lengths
         inflow_highway_edge_len = env.k.scenario.edge_length('inflow_highway')
@@ -310,6 +301,10 @@ class NashController(BaseController):
                 # This vehicle is on an observable edge - add its
                 # position and velocity to x0.
                 pos = value[POSITION] + edge_start_pos[edge]
+
+                # Don't add vehicles that are outside of the MPC time horizon.
+                if abs(pos-ego_pos) > self.N*dt*speed_limit:
+                    continue
                 x0.extend([pos, value[SPEED]])
 
                 vehicle_idx = len(x0)//2
@@ -335,9 +330,25 @@ class NashController(BaseController):
                           [np.zeros((2,B.shape[1])), Bk]])
         return A,B
 
+    @staticmethod
+    def getAB(dt, n_vehicles):
+
+        a = c.DM([[1, dt],[0, 1]])
+        A = a
+
+        for _ in range(1, n_vehicles):
+            A = c.diagcat(A, a)
+
+        b = c.DM([[0],[dt]])
+        B = b
+
+        for _ in range(1, n_vehicles):
+            B = c.diagcat(B, b)
+
+        return A,B
+
     def get_reference_trajectory(self, env, x0):
-        dt = 0.1
-        N = 20
+        dt = self.dt
         n = len(x0)
         m = n//2
 
@@ -345,7 +356,7 @@ class NashController(BaseController):
 
         Xref = [np.array(x0).reshape((n,1))]
         Uref = [np.zeros((m,1))]
-        for k in range(1,N):
+        for k in range(1,self.N):
             # Choose the controls for this time step
             # TODO: choose a control to meet desired action (e.g. avoid
             # collisions, accel to target speed)
