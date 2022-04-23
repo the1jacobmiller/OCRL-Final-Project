@@ -145,9 +145,6 @@ class NashController(BaseController):
             bottom_merge_indices = self.get_observable_state(env, vehicles)
         Xref,Uref = self.get_reference_trajectory(env, x0)
 
-        print('top_merge_indices', top_merge_indices)
-        print('bottom_merge_indices', bottom_merge_indices)
-
         # TODO: perform the optimization problem here and return the acceleration control
         self.opti = c.Opti()
 
@@ -190,26 +187,16 @@ class NashController(BaseController):
             # set the velocity constraints
             self.opti.subject_to(self.opti.bounded(0, x[:,k][1], speed_limit))
 
-
-        # I had to iterate over a list of the keys because the
-        # id name is flow_00_x for cars on the inflow and
-        # flow_10_x for cars on the merge making it hard to index
-        # also doing it this way because top/bottom_merge_indices
-        # weren't returning anything
-        veh_keys = list(vehicles.keys())
-
         for i in range(0, n_vehicles-1):
             xi = x[i,:]
-            edge_i = env.k.vehicle.get_edge(veh_keys[i])
             for j in range(i+1, n_vehicles):
                 xj = x[j,:]
-                edge_j = env.k.vehicle.get_edge(veh_keys[j])
-                if edge_i == 'bottom' and edge_j == 'left' or edge_i == 'left' and edge_j == 'bottom':
+                if (i in top_merge_indices and j in bottom_merge_indices) or (j in top_merge_indices and i in bottom_merge_indices):
                     alpha = 0.9
                     tau = 10
                     for t in range(T):
                         # ramp down tau to avoid infeasible conditions
-                        constraint = np.sqrt((xi[t] - xj[t])**2)
+                        constraint = (xi[t] - xj[t])**2
                         tau *= alpha
                         print("tau: ", tau)
                         self.opti.subject_to(self.opti.bounded(tau, constraint, np.inf))
@@ -219,21 +206,21 @@ class NashController(BaseController):
                     constraint = (xj - xi)**2
                     self.opti.subject_to(self.opti.bounded(tau, constraint, np.inf))
 
-        self.opti.solver("ipopt")
-        self.result = self.opti.solve()
+        # self.opti.solver("ipopt")
+        # self.result = self.opti.solve()
 
-        x_res = self.result.value(x)
-        u_res = self.result.value(u)
+        # x_res = self.result.value(x)
+        # u_res = self.result.value(u)
 
-        x_res = x_res.reshape(x.shape)
-        u_res = u_res.reshape(u.shape)
+        # x_res = x_res.reshape(x.shape)
+        # u_res = u_res.reshape(u.shape)
 
         # print(x_res[0,:])
-        print(u_res[0,:])
+        #print(u_res[0,:])
 
-        controls = u_res[0][0]
+        # controls = u_res[0][0]
 
-        #controls = 0
+        controls = 0
         return controls
 
     def get_observable_state(self, env, vehicles):
