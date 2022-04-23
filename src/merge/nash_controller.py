@@ -182,27 +182,28 @@ class NashController(BaseController):
         for k in range(T-1):
             # set the dynamics constraints
             self.opti.subject_to(x[:,k+1]==A@x[:,k] + B@u[:,k])
-
+ 
         for k in range(n_vehicles):
             # set the velocity constraints
             self.opti.subject_to(self.opti.bounded(0, x[2*k+1,:], speed_limit))
 
+        min_seperation = env.k.vehicle.get_length(0) * 1.5
+    
         for i in range(0, n_vehicles-1):
             xi = x[2*i,:]
             for j in range(i+1, n_vehicles):
                 xj = x[2*j,:]
                 if (i in top_merge_indices and j in bottom_merge_indices) or (j in top_merge_indices and i in bottom_merge_indices):
-                    alpha = 0.1
+                    alpha = min_seperation/T
                     tau = 0.0
                     for t in range(T):
                         # ramp down tau to avoid infeasible conditions
                         tau += alpha
                         constraint = (xi[t] - xj[t])**2
-                        print("tau: ", tau)
                         self.opti.subject_to(self.opti.bounded(tau, constraint, np.inf))
                 else:
                     # needs to be tuned for normal conditions
-                    tau = 1.0
+                    tau = min_seperation
                     constraint = (xj - xi)**2
                     self.opti.subject_to(self.opti.bounded(tau, constraint, np.inf))
 
