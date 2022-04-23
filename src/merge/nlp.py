@@ -32,6 +32,7 @@ class NLPProblem:
         self.opti = c.Opti()
 
         # state and control
+        print(n)
         x = self.opti.variable(n, duration)
         u = self.opti.variable(m, duration)
 
