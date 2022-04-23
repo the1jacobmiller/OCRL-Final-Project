@@ -145,17 +145,20 @@ class NashController(BaseController):
             bottom_merge_indices = self.get_observable_state(env, vehicles)
         Xref,Uref = self.get_reference_trajectory(env, x0)
 
+        print('top_merge_indices', top_merge_indices)
+        print('bottom_merge_indices', bottom_merge_indices)
+
         # TODO: perform the optimization problem here and return the acceleration control
         self.opti = c.Opti()
 
-        n = Xref.shape[1] 
+        n = Xref.shape[1]
         m = Uref.shape[1]
 
         n_vehicles = n//2
 
         T = Xref.shape[0]
 
-        x = self.opti.variable(n,T) 
+        x = self.opti.variable(n,T)
         u = self.opti.variable(m,T)
 
         Q = c.MX.eye(n) * 100
@@ -167,7 +170,7 @@ class NashController(BaseController):
 
         stage_cost = (x - Xref).T @ Q @ (x - Xref) + (u - Uref).T @ R @ (u - Uref)
         term_cost = (x[:,-1] - Xref[:,-1]).T @ Qf @ (x[:,-1] - Xref[:,-1])
-    
+
         # const function
         self.opti.minimize(c.sumsqr(stage_cost) + term_cost)
 
@@ -188,13 +191,13 @@ class NashController(BaseController):
             self.opti.subject_to(self.opti.bounded(0, x[:,k][1], speed_limit))
 
 
-        # I had to iterate over a list of the keys because the 
-        # id name is flow_00_x for cars on the inflow and 
+        # I had to iterate over a list of the keys because the
+        # id name is flow_00_x for cars on the inflow and
         # flow_10_x for cars on the merge making it hard to index
         # also doing it this way because top/bottom_merge_indices
-        # weren't returning anything 
+        # weren't returning anything
         veh_keys = list(vehicles.keys())
-        
+
         for i in range(0, n_vehicles-1):
             xi = x[i,:]
             edge_i = env.k.vehicle.get_edge(veh_keys[i])
@@ -298,9 +301,9 @@ class NashController(BaseController):
         ego_pos = vehicles[self.veh_id][POSITION] + edge_start_pos[ego_edge]
         x0 = [ego_pos, vehicles[self.veh_id][SPEED]]
 
-        if ego_edge in top_merge_indices:
+        if ego_edge in top_merge_edges:
             top_merge_indices.append(0)
-        if ego_edge in bottom_merge_indices:
+        if ego_edge in bottom_merge_edges:
             bottom_merge_indices.append(0)
 
         # Now handle all other vehicles
@@ -316,9 +319,9 @@ class NashController(BaseController):
                 x0.extend([pos, value[SPEED]])
 
                 vehicle_idx = len(x0)//2
-                if edge in top_merge_indices:
+                if edge in top_merge_edges:
                     top_merge_indices.append(vehicle_idx)
-                if edge in bottom_merge_indices:
+                if edge in bottom_merge_edges:
                     bottom_merge_indices.append(vehicle_idx)
 
         return x0, top_merge_indices, bottom_merge_indices
