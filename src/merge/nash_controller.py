@@ -202,16 +202,17 @@ class NashController(BaseController):
                 xj = x[j,:]
                 edge_j = env.k.vehicle.get_edge(veh_keys[j])
                 if edge_i == 'bottom' and edge_j == 'left' or edge_i == 'left' and edge_j == 'bottom':
-                    alpha = 0.98
-                    tau = 4
+                    alpha = 0.9
+                    tau = 10
                     for t in range(T):
-                        # ramp up tau to avoid infeasible conditions
-                        constraint = (xi[t] - xj[t])**2
+                        # ramp down tau to avoid infeasible conditions
+                        constraint = np.sqrt((xi[t] - xj[t])**2)
                         tau *= alpha
+                        print("tau: ", tau)
                         self.opti.subject_to(self.opti.bounded(tau, constraint, np.inf))
                 else:
                     # needs to be tuned for normal conditions
-                    tau = 2.0
+                    tau = 1.0
                     constraint = (xj - xi)**2
                     self.opti.subject_to(self.opti.bounded(tau, constraint, np.inf))
 
