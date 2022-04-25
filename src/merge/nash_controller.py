@@ -126,9 +126,15 @@ class NashController(BaseController):
             speed = env.k.vehicle.get_speed(veh_id)
             vehicles[veh_id] = (edge, edge_len, pos, speed)
 
+        min_seperation = env.k.vehicle.get_length(self.veh_id) * 2.0
+        speed_limit = env.net_params.additional_params['speed_limit']
+        accel_limit = env.env_params.additional_params['max_accel']
+
         x0, top_merge_indices, \
             bottom_merge_indices = self.get_observable_state(env, vehicles)
-        Xref,Uref = self.get_reference_trajectory(env, x0)
+        Xref,Uref = self.get_reference_trajectory(env, x0, min_seperation,
+                                                  speed_limit, accel_limit,
+                                                  bottom_merge_indices)
 
         self.opti = c.Opti()
 
@@ -139,21 +145,38 @@ class NashController(BaseController):
         x = self.opti.variable(n,self.N)
         u = self.opti.variable(m,self.N)
 
-        Q = c.MX.eye(n) * 1e3
-        Qf = c.MX.eye(n) * 1e3
-        R = c.MX.eye(m)
+        Q = c.MX.eye(n)
+        Qf = c.MX.eye(n)
+        R = c.MX.eye(self.N-1)
+
+        # Allow vehicles on the bottom merge lanes to use more aggressive
+        # control.
+        if 0 in bottom_merge_indices:
+            R = R * 1e-3
+
+        # Allow vehicles on the bottom merge lanes to deviate more from the
+        # reference trajectory.
+        for k in range(n_vehicles):
+            if k in bottom_merge_indices:
+                Q[2*k,2*k] = 1e-2 # position
+                Q[2*k+1,2*k+1] = 1e-1 # velocity
+                Qf[2*k,2*k] = 1e-2 # final position
+                Qf[2*k+1,2*k+1] = 1e-1 # final velocity
+            else:
+                Q[2*k,2*k] = 1e3 # position
+                Q[2*k+1,2*k+1] = 1e5 # velocity
+                Qf[2*k,2*k] = 1e3 # final position
+                Qf[2*k+1,2*k+1] = 1e5 # final velocity
+
 
         Xref = Xref.T.squeeze(0)
         Uref = Uref.T.squeeze(0)
 
-        stage_cost = (x - Xref).T @ Q @ (x - Xref) + (u - Uref).T @ R @ (u - Uref)
+        stage_cost = (x - Xref).T @ Q @ (x - Xref) + (u[0] - Uref[0,:]).T @ R @ (u[0] - Uref[0,:])
         term_cost = (x[:,-1] - Xref[:,-1]).T @ Qf @ (x[:,-1] - Xref[:,-1])
 
         # const function
         self.opti.minimize(c.sumsqr(stage_cost) + term_cost)
-
-        speed_limit = env.net_params.additional_params['speed_limit']
-        accel_limit = env.env_params.additional_params['max_accel']
 
         # set the acceleration constraints
         self.opti.subject_to(self.opti.bounded(-accel_limit, u, accel_limit))
@@ -168,8 +191,6 @@ class NashController(BaseController):
             # set the velocity constraints
             self.opti.subject_to(self.opti.bounded(0, x[2*k+1,:], speed_limit))
 
-        min_seperation = (env.k.vehicle.get_length(self.veh_id) * 2.0)**2
-
         for i in range(0, n_vehicles-1):
             xi = x[2*i,:]
             for j in range(i+1, n_vehicles):
@@ -177,30 +198,34 @@ class NashController(BaseController):
                 if (i in top_merge_indices and j in bottom_merge_indices) \
                     or (j in top_merge_indices and i in bottom_merge_indices):
                     start_separation = (x0[2*i] - x0[2*j])**2
-                    if (start_separation > min_seperation):
+                    if (start_separation > min_seperation**2):
                         # Treat it like the normal case - constraint is fully
                         # active at all times.
                         constraint = (xj - xi)**2
-                        self.opti.subject_to(self.opti.bounded(min_seperation,
+                        self.opti.subject_to(self.opti.bounded(min_seperation**2,
                                                                constraint,
                                                                np.inf))
                     else:
                         time_to_merge = min(-x0[2*i], -x0[2*j])/speed_limit
                         time_steps_to_merge = min(int(time_to_merge/self.dt), self.N)
 
-                        alpha = (min_seperation - start_separation)/time_steps_to_merge
+                        alpha = (min_seperation**2 - start_separation)/time_steps_to_merge
                         tau = start_separation
                         for t in range(time_steps_to_merge):
-                            # ramp down tau to avoid infeasible conditions
-                            tau += alpha
+                            # ramp up tau to avoid infeasibility
+                            if tau < min_seperation**2:
+                                tau += alpha
+                            else:
+                                tau = min_seperation**2
                             constraint = (xi[t] - xj[t])**2
                             self.opti.subject_to(self.opti.bounded(tau, constraint, np.inf))
                 else:
                     # needs to be tuned for normal conditions
-                    tau = min_seperation
+                    tau = min_seperation**2
                     constraint = (xj - xi)**2
                     self.opti.subject_to(self.opti.bounded(tau, constraint, np.inf))
 
+        controls = None
         try:
             self.opti.solver("ipopt")
             self.result = self.opti.solve()
@@ -209,9 +234,10 @@ class NashController(BaseController):
             u_res = self.result.value(u).reshape(u.shape)
             controls = u_res[0][0]
         except:
-            # If we fail, command 0 acceleration
-            print('IPOPT SOLVER FAILED!!')
-            control = 0.
+            # If we fail, use the reference control
+            # TODO: change this to relax constraints and re-attempt optimization
+            print('****************IPOPT SOLVER FAILED!!******************')
+            controls = Uref[0,0]
 
         print('Vehicle:', self.veh_id)
         print('Control:', controls)
@@ -347,7 +373,46 @@ class NashController(BaseController):
 
         return A,B
 
-    def get_reference_trajectory(self, env, x0):
+    @staticmethod
+    def get_vehicle_separations(veh_idx, x):
+        n = len(x)
+        n_vehicles = n//2
+
+        vehicle_separations = []
+        for k in range(n_vehicles):
+            if k != veh_idx:
+                separation = x[2*veh_idx] - x[2*k]
+                vehicle_separations.append(separation)
+
+        return np.array(vehicle_separations)
+
+    @staticmethod
+    def get_reference_control(x, min_seperation, accel_limit, bottom_merge_indices):
+        # Choose the controls for this time step. This approach puts the
+        # responsibility to accelerate/decelerate on the merging vehicle,
+        # keeping the reference velocity for highway vehicles constant.
+        n = len(x)
+        m = n//2
+        uk = np.zeros((m,1))
+        for i in range(m):
+            if i in bottom_merge_indices:
+                vehicle_separations = NashController.get_vehicle_separations(i, x)
+                min_seperation_idx = np.argmin(np.abs(vehicle_separations))
+
+                # Check if vehicle i is too close to any other vehicles.
+                if abs(vehicle_separations[min_seperation_idx]) < min_seperation:
+                    if vehicle_separations[min_seperation_idx] > min_seperation/2.:
+                        # Vehicle i is sufficiently ahead of the other
+                        # vehicle - vehicle i should accelerate.
+                        uk[i] = accel_limit
+                    else:
+                        # Vehicle i not sufficiently ahead or is behind the
+                        # other vehicle - vehicle i should decelerate
+                        uk[i] = -accel_limit
+        return uk
+
+    def get_reference_trajectory(self, env, x0, min_seperation, speed_limit,
+                                 accel_limit, bottom_merge_indices):
         dt = self.dt
         n = len(x0)
         m = n//2
@@ -355,12 +420,12 @@ class NashController(BaseController):
         A,B = NashController.get_dynamics_jacobians(m, dt)
 
         Xref = [np.array(x0).reshape((n,1))]
-        Uref = [np.zeros((m,1))]
+        Uref = []
         for k in range(1,self.N):
-            # Choose the controls for this time step
-            # TODO: choose a control to meet desired action (e.g. avoid
-            # collisions, accel to target speed)
-            uk = np.zeros((m,1))
+            uk = NashController.get_reference_control(Xref[-1],
+                                                      min_seperation,
+                                                      accel_limit,
+                                                      bottom_merge_indices)
             Uref.append(uk)
 
             # Apply dynamics
