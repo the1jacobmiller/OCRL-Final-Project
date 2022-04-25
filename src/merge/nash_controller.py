@@ -4,6 +4,7 @@ from merge.nlp import NLPProblem
 import numpy as np
 import casadi as c
 import copy
+import os
 
 
 class NashController(BaseController):
@@ -69,6 +70,8 @@ class NashController(BaseController):
         self.s1 = s1
         self.dt = dt
         self.N = N
+        self.t = 0
+        self.plot_arr = []
 
         # Define the observable edges
         self.observable_edges = {}
@@ -129,12 +132,13 @@ class NashController(BaseController):
 
         min_seperation = env.k.vehicle.get_length(self.veh_id) * 2.0
         speed_limit = env.net_params.additional_params['speed_limit']
+        target_speed = env.env_params.additional_params['target_velocity']
         accel_limit = env.env_params.additional_params['max_accel']
 
         x0, top_merge_indices, \
             bottom_merge_indices = self.get_observable_state(env, vehicles)
         Xref,Uref = self.get_reference_trajectory(env, x0, min_seperation,
-                                                  speed_limit, accel_limit,
+                                                  target_speed, accel_limit,
                                                   bottom_merge_indices)
 
         controls = None
@@ -162,11 +166,17 @@ class NashController(BaseController):
             finally:
                 iter += 1
 
+
         if controls is None:
             # We couldn't find a solution even after relaxing constraints - use
             # the reference controls
             print('****************USING REFERENCE CONTROLS!!*****************')
             controls = Uref[0][0]
+
+        # Plotting code, saves tuple of controls and position to be loaded in by create_plots
+        self.t += 1
+        self.plot_arr.append((self.veh_id, self.t, controls, x0[0], x0[1]))
+        np.save('merge/plot_data/' + self.veh_id + ".npy", self.plot_arr)
 
         print('Vehicle:', self.veh_id)
         print('Control:', controls)
@@ -200,32 +210,31 @@ class NashController(BaseController):
         # Store the edge lengths
         inflow_highway_edge_len = env.k.scenario.edge_length('inflow_highway')
         inflow_merge_edge_len = env.k.scenario.edge_length('inflow_merge')
-        merge_edge_len = env.k.scenario.edge_length('left')
+        left_edge_len = env.k.scenario.edge_length('left')
+        bottom_edge_len = env.k.scenario.edge_length('bottom')
         center0_merge_edge_len = env.k.scenario.edge_length(':center_0')
         center1_merge_edge_len = env.k.scenario.edge_length(':center_1')
         bottom0_edge_len = env.k.scenario.edge_length(':bottom_0')
         left0_edge_len = env.k.scenario.edge_length(':left_0')
 
-        assert merge_edge_len == env.k.scenario.edge_length("bottom")
-
         edge_start_pos = {}
         edge_start_pos['inflow_highway'] = -(center1_merge_edge_len + \
-                                             merge_edge_len + \
+                                             left_edge_len + \
                                              left0_edge_len + \
                                              inflow_highway_edge_len)
         edge_start_pos[':left_0'] = -(center1_merge_edge_len + \
-                                      merge_edge_len + \
+                                      left_edge_len + \
                                       left0_edge_len)
-        edge_start_pos['left'] = -(center1_merge_edge_len + merge_edge_len)
+        edge_start_pos['left'] = -(center1_merge_edge_len + left_edge_len)
         edge_start_pos[':center_1'] = -center1_merge_edge_len
         edge_start_pos['inflow_merge'] = -(center0_merge_edge_len + \
-                                           merge_edge_len + \
+                                           bottom_edge_len + \
                                            bottom0_edge_len + \
                                            inflow_merge_edge_len)
         edge_start_pos[':bottom_0'] = -(center0_merge_edge_len + \
-                                        merge_edge_len + \
+                                        bottom_edge_len + \
                                         bottom0_edge_len)
-        edge_start_pos['bottom'] = -(center0_merge_edge_len + merge_edge_len)
+        edge_start_pos['bottom'] = -(center0_merge_edge_len + bottom_edge_len)
         edge_start_pos[':center_0'] = -center0_merge_edge_len
         edge_start_pos['center'] = 0
 
@@ -299,7 +308,12 @@ class NashController(BaseController):
         return np.array(vehicle_separations)
 
     @staticmethod
-    def get_reference_control(x, min_seperation, accel_limit, bottom_merge_indices):
+    def clamp(min_num, num, max_num):
+        return max(min(max_num, num), min_num)
+
+    @staticmethod
+    def get_reference_control(x, min_seperation, accel_limit,
+                              target_speed, bottom_merge_indices):
         # Choose the controls for this time step. This approach puts the
         # responsibility to accelerate/decelerate on the merging vehicle,
         # keeping the reference velocity for highway vehicles constant.
@@ -307,7 +321,7 @@ class NashController(BaseController):
         m = n//2
         uk = np.zeros((m,1))
         for i in range(m):
-            if i in bottom_merge_indices:
+            if i in bottom_merge_indices and m > 1:
                 vehicle_separations = NashController.get_vehicle_separations(i, x)
                 min_seperation_idx = np.argmin(np.abs(vehicle_separations))
 
@@ -321,9 +335,15 @@ class NashController(BaseController):
                         # Vehicle i not sufficiently ahead or is behind the
                         # other vehicle - vehicle i should decelerate
                         uk[i] = -accel_limit
+            if uk[i] == 0 and x[2*i+1] != target_speed:
+                # Vehicle i is not at target speed - accelerate to target speed.
+                speed_diff = target_speed - x[2*i+1]
+                uk[i] = NashController.clamp(-accel_limit,
+                                             speed_diff/10.,
+                                             accel_limit)
         return uk
 
-    def get_reference_trajectory(self, env, x0, min_seperation, speed_limit,
+    def get_reference_trajectory(self, env, x0, min_seperation, target_speed,
                                  accel_limit, bottom_merge_indices):
         dt = self.dt
         n = len(x0)
@@ -337,6 +357,7 @@ class NashController(BaseController):
             uk = NashController.get_reference_control(Xref[-1],
                                                       min_seperation,
                                                       accel_limit,
+                                                      target_speed,
                                                       bottom_merge_indices)
             Uref.append(uk)
 
