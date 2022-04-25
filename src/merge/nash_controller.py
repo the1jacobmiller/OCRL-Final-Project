@@ -69,6 +69,8 @@ class NashController(BaseController):
         self.s1 = s1
         self.dt = dt
         self.N = N
+        self.t = 0
+        self.plot_arr = []
 
         # Define the observable edges
         self.observable_edges = {}
@@ -153,6 +155,7 @@ class NashController(BaseController):
                                         self.dt,
                                         self.N)
                 controls = u_res[0][0]
+                position = x_res[0][0]
             except:
                 print('****************IPOPT SOLVE FAILED!!*******************')
                 print('Iter %d: Relaxing constraints' % (iter))
@@ -162,11 +165,19 @@ class NashController(BaseController):
             finally:
                 iter += 1
 
+
         if controls is None:
             # We couldn't find a solution even after relaxing constraints - use
             # the reference controls
             print('****************USING REFERENCE CONTROLS!!*****************')
             controls = Uref[0][0]
+            position = Xref[0][0]
+
+        # Plotting code, saves tuple of controls and position to be loaded in by create_plots
+        self.t += 1
+        self.plot_arr.append((self.veh_id, self.t, controls, position))
+        if (self.t == 85):
+            np.save('plot_data/' + self.veh_id + ".npy", self.plot_arr)
 
         print('Vehicle:', self.veh_id)
         print('Control:', controls)
