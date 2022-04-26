@@ -9,6 +9,7 @@ class NLPProblem:
     """
 
     def solve(self,
+              x0,
               Xref,
               Uref,
               top_merge_indices,
@@ -31,7 +32,7 @@ class NLPProblem:
 
         Q = c.MX.eye(n)
         Qf = c.MX.eye(n)
-        R = c.MX.eye(self.N-1)
+        R = c.MX.eye(self.N)
 
         # Allow vehicles on the bottom merge lanes to use more aggressive
         # control.
@@ -43,9 +44,9 @@ class NLPProblem:
         for k in range(n_vehicles):
             if k in bottom_merge_indices:
                 Q[2*k,2*k] = 1e-2 # position
-                Q[2*k+1,2*k+1] = 1e-1 # velocity
+                Q[2*k+1,2*k+1] = 1e1 # velocity
                 Qf[2*k,2*k] = 1e-2 # final position
-                Qf[2*k+1,2*k+1] = 1e-1 # final velocity
+                Qf[2*k+1,2*k+1] = 1e1 # final velocity
             else:
                 Q[2*k,2*k] = 1e3 # position
                 Q[2*k+1,2*k+1] = 1e5 # velocity
@@ -56,7 +57,7 @@ class NLPProblem:
         Xref = Xref.T.squeeze(0)
         Uref = Uref.T.squeeze(0)
 
-        stage_cost = (self.x - Xref).T @ Q @ (self.x - Xref) + (self.u[0] - Uref[0,:]).T @ R @ (self.u[0] - Uref[0,:])
+        stage_cost = (self.x - Xref).T @ Q @ (self.x - Xref) + self.u[0,:] @ R @ self.u[0,:].T
         term_cost = (self.x[:,-1] - Xref[:,-1]).T @ Qf @ (self.x[:,-1] - Xref[:,-1])
 
         # const function
@@ -83,7 +84,7 @@ class NLPProblem:
                     or (j in top_merge_indices and i in bottom_merge_indices):
                     # Calculate the start separation, and give a little wiggle
                     # room to avoid infeasiblity at the start.
-                    start_separation = (Xref[0][2*i] - Xref[0][2*j])**2 - 1.0
+                    start_separation = (x0[2*i] - x0[2*j])**2 - 1.0
                     if (start_separation > min_seperation**2):
                         # Treat it like the normal case - constraint is fully
                         # active at all times.
@@ -92,7 +93,7 @@ class NLPProblem:
                                                                constraint,
                                                                np.inf))
                     else:
-                        time_to_merge = min(-Xref[0][2*i], -Xref[0][2*j])/speed_limit
+                        time_to_merge = min(-x0[2*i], -x0[2*j])/speed_limit
                         time_steps_to_merge = min(int(time_to_merge/self.dt), self.N)
 
                         alpha = (min_seperation**2 - start_separation)/time_steps_to_merge
@@ -111,6 +112,8 @@ class NLPProblem:
                     constraint = (xj - xi)**2
                     self.opti.subject_to(self.opti.bounded(tau, constraint, np.inf))
 
+        self.opti.set_initial(self.x, Xref)
+        self.opti.set_initial(self.u, Uref)
         self.opti.solver("ipopt")
         self.result = self.opti.solve()
 
@@ -143,27 +146,25 @@ class NLPProblem:
         return self.result.value(self.u).reshape(self.u.shape)
 
     def plot_solution(self):
-        fig, (ax1, ax2) = plt.subplots(1, 2)
+        fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(15,15))
         state = self.get_state()
         control = self.get_controls()
-        ax1.set_title("States")
-        ax1.plot(state[0, :], 'r', label="X Position")
-        ax1.plot(state[1, :], 'r--', label="X Velocity")
-        ax1.plot(state[2, :], 'b', label="Y Position")
-        ax1.plot(state[3, :], 'b--', label="Y Velocity")
+        n_vehicles = state.shape[0]//2
+
+        ax1.set_title("Positions")
+        for i in range(n_vehicles):
+            ax1.plot(state[2*i, :], label="Veh #"+str(i))
+        ax1.ticklabel_format(useOffset=False, style='plain')
         ax1.legend()
-        # plot the controls
-        ax2.set_title("Controls")
-        ax2.plot(control[0, :], 'm', label="1st Control")
-        ax2.plot(control[1, :], 'm', label="2nd Control")
+
+        ax2.set_title("Velocities")
+        for i in range(n_vehicles):
+            ax2.plot(state[2*i+1, :], label="Veh #"+str(i))
+        ax2.ticklabel_format(useOffset=False, style='plain')
         ax2.legend()
 
-
+        ax3.set_title("Accelerations")
+        for i in range(n_vehicles):
+            ax3.plot(control[i, :], label="Veh #"+str(i))
+        ax3.legend()
         plt.show()
-
-
-
-
-if __name__ == "__main__":
-    prob = NLPProblem([0, 0, 0, 0], [2, 3, 0.1, 1])
-    prob.plot_solution()

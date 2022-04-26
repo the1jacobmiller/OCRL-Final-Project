@@ -130,7 +130,7 @@ class NashController(BaseController):
             speed = env.k.vehicle.get_speed(veh_id)
             vehicles[veh_id] = (edge, edge_len, pos, speed)
 
-        min_seperation = env.k.vehicle.get_length(self.veh_id) * 2.0
+        min_seperation = env.k.vehicle.get_length(self.veh_id) * 1.25
         speed_limit = env.net_params.additional_params['speed_limit']
         target_speed = env.env_params.additional_params['target_velocity']
         accel_limit = env.env_params.additional_params['max_accel']
@@ -147,7 +147,8 @@ class NashController(BaseController):
         iter = 0
         while controls is None and iter < 3:
             try:
-                x_res,u_res = nlp.solve(Xref,
+                x_res,u_res = nlp.solve(x0,
+                                        Xref,
                                         Uref,
                                         top_merge_indices,
                                         bottom_merge_indices,
@@ -180,6 +181,8 @@ class NashController(BaseController):
 
         print('Vehicle:', self.veh_id)
         print('Control:', controls)
+        if iter < 3:
+            nlp.plot_solution()
 
         return controls
 
@@ -339,7 +342,7 @@ class NashController(BaseController):
                 # Vehicle i is not at target speed - accelerate to target speed.
                 speed_diff = target_speed - x[2*i+1]
                 uk[i] = NashController.clamp(-accel_limit,
-                                             speed_diff/10.,
+                                             speed_diff,
                                              accel_limit)
         return uk
 
@@ -353,7 +356,7 @@ class NashController(BaseController):
 
         Xref = [np.array(x0).reshape((n,1))]
         Uref = []
-        for k in range(1,self.N):
+        for k in range(0,self.N):
             uk = NashController.get_reference_control(Xref[-1],
                                                       min_seperation,
                                                       accel_limit,
@@ -365,7 +368,7 @@ class NashController(BaseController):
             xk = A @ Xref[-1] + B @ Uref[-1]
             Xref.append(xk)
 
-        Xref = np.array(Xref)
+        Xref = np.array(Xref[1:]) # don't include the first state
         Uref = np.array(Uref)
 
         return Xref, Uref
