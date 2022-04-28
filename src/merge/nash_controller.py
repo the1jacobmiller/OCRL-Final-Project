@@ -183,6 +183,7 @@ class NashController(BaseController):
         print('Control:', controls)
         if iter < 3:
             nlp.plot_solution()
+            nlp.plot_reference_trajectories(Xref,Uref)
 
         return controls
 
@@ -371,7 +372,7 @@ class NashController(BaseController):
         Xref = np.array(Xref[1:]) # don't include the first state
         Uref = np.array(Uref)
 
-        return Xref, Uref
+        return Xref.T.squeeze(0), Uref.T.squeeze(0)
 
     def get_action(self, env):
         """Convert the get_accel() acceleration into an action.

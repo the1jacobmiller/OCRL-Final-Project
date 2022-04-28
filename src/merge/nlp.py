@@ -23,8 +23,8 @@ class NLPProblem:
         self.dt = dt
         self.N = N
 
-        n = Xref.shape[1]
-        m = Uref.shape[1]
+        n = Xref.shape[0]
+        m = Uref.shape[0]
         n_vehicles = n//2
 
         self.x = self.opti.variable(n,self.N)
@@ -52,10 +52,6 @@ class NLPProblem:
                 Q[2*k+1,2*k+1] = 1e5 # velocity
                 Qf[2*k,2*k] = 1e3 # final position
                 Qf[2*k+1,2*k+1] = 1e5 # final velocity
-
-
-        Xref = Xref.T.squeeze(0)
-        Uref = Uref.T.squeeze(0)
 
         stage_cost = (self.x - Xref).T @ Q @ (self.x - Xref) + self.u[0,:] @ R @ self.u[0,:].T
         term_cost = (self.x[:,-1] - Xref[:,-1]).T @ Qf @ (self.x[:,-1] - Xref[:,-1])
@@ -166,5 +162,28 @@ class NLPProblem:
         ax3.set_title("Accelerations")
         for i in range(n_vehicles):
             ax3.plot(control[i, :], label="Veh #"+str(i))
+        ax3.legend()
+        plt.show()
+
+    @staticmethod
+    def plot_reference_trajectories(Xref, Uref):
+        fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(15,15))
+        n_vehicles = Xref.shape[0]//2
+
+        ax1.set_title("Reference Positions")
+        for i in range(n_vehicles):
+            ax1.plot(Xref[2*i, :], label="Veh #"+str(i))
+        ax1.ticklabel_format(useOffset=False, style='plain')
+        ax1.legend()
+
+        ax2.set_title("Reference Velocities")
+        for i in range(n_vehicles):
+            ax2.plot(Xref[2*i+1, :], label="Veh #"+str(i))
+        ax2.ticklabel_format(useOffset=False, style='plain')
+        ax2.legend()
+
+        ax3.set_title("Reference Accelerations")
+        for i in range(n_vehicles):
+            ax3.plot(Uref[i, :], label="Veh #"+str(i))
         ax3.legend()
         plt.show()
